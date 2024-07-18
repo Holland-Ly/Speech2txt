@@ -1,76 +1,100 @@
-# importing libraries 
 import moviepy.editor as mp
 import speech_recognition as sr 
 import os 
+import argparse
 from pydub import AudioSegment
 from pydub.silence import split_on_silence
+import logging
 
-# create a speech recognition object
-r = sr.Recognizer()
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# a function to recognize speech in the audio file
-# so that we don't repeat ourselves in in other functions
+def init_folders(source, display_logging):
+    folders = ['audio', 'video', 'caption', source]
+    for folder in folders:
+        os.makedirs(folder, exist_ok=True)
+    if display_logging:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    else:
+        logging.disable(logging.CRITICAL)
+    return source
+
+def is_audio_file(filename):
+    audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma'}
+    return os.path.splitext(filename)[1].lower() in audio_extensions
+
+def is_video_file(filename):
+    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'}
+    return os.path.splitext(filename)[1].lower() in video_extensions
+
 def transcribe_audio(path):
-    # use the audio file as the audio source
+    r = sr.Recognizer()
     with sr.AudioFile(path) as source:
         audio_listened = r.record(source)
-        # try converting it to text
-        text = r.recognize_google(audio_listened)
-    return text
+        try:
+            text = r.recognize_google(audio_listened)
+            return text
+        except sr.UnknownValueError:
+            logging.warning(f"Could not understand audio in {path}")
+            return ""
 
-# a function that splits the audio file into chunks on silence
-# and applies speech recognition
 def get_large_audio_transcription_on_silence(path):
-    """Splitting the large audio file into chunks
-    and apply speech recognition on each of these chunks"""
-    # open the audio file using pydub
-    sound = AudioSegment.from_file(path)  
-    # split audio sound where silence is 500 miliseconds or more and get chunks
+    sound = AudioSegment.from_file(path)
     chunks = split_on_silence(sound,
-        # experiment with this value for your target audio file
-        min_silence_len = 500,
-        # adjust this per requirement
-        silence_thresh = sound.dBFS-14,
-        # keep the silence for 1 second, adjustable as well
+        min_silence_len=500,
+        silence_thresh=sound.dBFS-14,
         keep_silence=500,
     )
+    
     folder_name = "audio-chunks"
-    # create a directory to store the audio chunks
-    if not os.path.isdir(folder_name):
-        os.mkdir(folder_name)
-    whole_text = ""
-    # process each chunk 
+    sub_folder_name = os.path.join(folder_name, os.path.splitext(os.path.basename(path))[0])
+    os.makedirs(sub_folder_name, exist_ok=True)
+    
+    whole_text = []
     for i, audio_chunk in enumerate(chunks, start=1):
-        # export audio chunk and save it in
-        # the `folder_name` directory.
-        chunk_filename = os.path.join(folder_name, f"chunk{i}.wav")
+        chunk_filename = os.path.join(sub_folder_name, f"chunk{i}.wav")
         audio_chunk.export(chunk_filename, format="wav")
-        # recognize the chunk
-        try:
-            text = transcribe_audio(chunk_filename)
-        except sr.UnknownValueError as e:
-            print("Error:", str(e))
-        else:
-            text = f"{text.capitalize()}. "
-            print(chunk_filename, ":", text)
-            whole_text += text
-    # return the text for all chunks detected
-    return whole_text
+        text = transcribe_audio(chunk_filename)
+        if text:
+            whole_text.append(f"{text.capitalize()}.")
+            logging.info(f"Transcribed chunk {i}: {text}")
+    
+    return ' '.join(whole_text)
 
-def main():
-    path=r'video/IMG_0814.MOV'
-    video = mp.VideoFileClip(path)
-    filename= os.path.splitext(os.path.basename(path))[0]+'.txt'
-    audio_filename= os.path.splitext(os.path.basename(path))[0]+'.wav'
-    output=os.path.join('Caption',filename)
-    audio_output=os.path.join('audio',audio_filename)
-    audio_file = video.audio 
-    audio_file.write_audiofile(audio_output) 
-    captions= get_large_audio_transcription_on_silence(audio_output)
+def process_file(path, output):
+    if is_video_file(path):
+        video = mp.VideoFileClip(path)
+        audio_filename = os.path.splitext(os.path.basename(path))[0] + '.wav'
+        audio_output = os.path.join('audio', audio_filename)
+        video.audio.write_audiofile(audio_output)
+    elif is_audio_file(path):
+        audio_output = path
+    else:
+        logging.warning(f"Unsupported file type: {path}")
+        return
+
+    logging.info(f'Transcribing {path}')
+    captions = get_large_audio_transcription_on_silence(audio_output)
+    
     with open(output, "w") as text_file:
         text_file.write(captions)
-        text_file.close()
-        
+    logging.info(f'Completed captions for {path}')
+
+def main(source,log):
+    folder_path = init_folders(source,log)
+    if not os.listdir(folder_path):
+        logging.warning('The job folder is empty!')
+        return
+
+    for filename in os.listdir(folder_path):
+        path = os.path.join(folder_path, filename)
+        caption_filename = os.path.splitext(filename)[0] + '.txt'
+        output = os.path.join('caption', caption_filename)
+        process_file(path, output)
+
 if __name__ == "__main__":
-    main()
-    
+    parser = argparse.ArgumentParser(description="Transcribe video and audio files")
+    parser.add_argument("--folder", help="folder of the video", default='job')
+    parser.add_argument("--log", action="store_true", help="display logging information",default=True)
+    args = parser.parse_args()
+    main(args.folder,args.log)
