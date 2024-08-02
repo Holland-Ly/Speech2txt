@@ -48,7 +48,7 @@ text
 
 2. Run the script:
 
-python transcribe.py [--folder FOLDER] [--log]
+python main.py [--folder FOLDER] [--log]
 text
 
 Arguments:
