@@ -3,7 +3,7 @@ import speech_recognition as sr
 import os 
 import argparse
 from pydub import AudioSegment
-from pydub.silence import split_on_silence
+from pydub.silence import detect_silence
 import logging
 from tqdm import tqdm
 import traceback
@@ -47,12 +47,17 @@ def get_large_audio_transcription_on_silence(path):
         sound = AudioSegment.from_file(path)
         logging.info(f"Audio file loaded successfully")
         
-        logging.info("Splitting audio on silence")
-        chunks = split_on_silence(sound,
-            min_silence_len=500,
-            silence_thresh=sound.dBFS-14,
-            keep_silence=500
-        )
+        logging.info("Detecting silence")
+        silence_thresh = sound.dBFS - 14
+        min_silence_len = 500
+        silences = detect_silence(sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
+        
+        chunks = []
+        start_time = 0
+        for silence_start, silence_end in silences:
+            chunks.append(sound[start_time:silence_start])
+            start_time = silence_end
+        chunks.append(sound[start_time:])  # Add the last chunk
         
         logging.info(f"Audio split into {len(chunks)} chunks")
         
@@ -78,6 +83,11 @@ def get_large_audio_transcription_on_silence(path):
                     logging.warning(f"No text transcribed for chunk {i}")
                 
                 current_time += len(audio_chunk) / 1000
+                
+                # Add silence duration if it's not the last chunk
+                if i < len(chunks):
+                    silence_duration = silences[i-1][1] - silences[i-1][0]
+                    current_time += silence_duration / 1000
             except Exception as e:
                 logging.error(f"Error processing chunk {i}: {str(e)}")
                 logging.error(traceback.format_exc())
@@ -143,7 +153,7 @@ def main(source, log):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Transcribe video and audio files")
-    parser.add_argument("--folder", help="folder of the video", default='job')
+    parser.add_argument("--folder", help="folder of the video", default='video')
     parser.add_argument("--log", action="store_true", help="display logging information",default=True)
     args = parser.parse_args()
     main(args.folder,args.log)
