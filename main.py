@@ -1,159 +1,48 @@
-import moviepy.editor as mp
-import speech_recognition as sr 
-import os 
-import argparse
-from pydub import AudioSegment
-from pydub.silence import detect_silence
-import logging
-from tqdm import tqdm
-import traceback
+import os
+from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from utils.video_processing import process_file
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+app = Flask(__name__)
+CORS(app)
 
-def init_folders(source, display_logging):
-    folders = ['audio', 'video', 'caption', source]
-    for folder in folders:
-        os.makedirs(folder, exist_ok=True)
-    if display_logging:
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    else:
-        logging.disable(logging.CRITICAL)
-    return source
+UPLOAD_FOLDER = 'uploads'
+CAPTION_FOLDER = 'captions'
+ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'webm'}
 
-def is_audio_file(filename):
-    audio_extensions = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma'}
-    return os.path.splitext(filename)[1].lower() in audio_extensions
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['CAPTION_FOLDER'] = CAPTION_FOLDER
 
-def is_video_file(filename):
-    video_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm'}
-    return os.path.splitext(filename)[1].lower() in video_extensions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def transcribe_audio(path):
-    r = sr.Recognizer()
-    
-    with sr.AudioFile(path) as source:
-        audio_listened = r.record(source)
-        try:
-            text = r.recognize_whisper(audio_listened)
-            return text
-        except sr.UnknownValueError:
-            logging.warning(f"Could not understand audio in {path}")
-            return ""
-
-def get_large_audio_transcription_on_silence(path):
-    try:
-        logging.info(f"Starting transcription for {path}")
-        sound = AudioSegment.from_file(path)
-        logging.info(f"Audio file loaded successfully")
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'video' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(video_path)
         
-        logging.info("Detecting silence")
-        silence_thresh = sound.dBFS - 14
-        min_silence_len = 500
-        silences = detect_silence(sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
-        
-        chunks = []
-        start_time = 0
-        for silence_start, silence_end in silences:
-            chunks.append(sound[start_time:silence_start])
-            start_time = silence_end
-        chunks.append(sound[start_time:])  # Add the last chunk
-        
-        logging.info(f"Audio split into {len(chunks)} chunks")
-        
-        folder_name = "audio-chunks"
-        sub_folder_name = os.path.join(folder_name, os.path.splitext(os.path.basename(path))[0])
-        os.makedirs(sub_folder_name, exist_ok=True)
-        
-        whole_text = []
-        current_time = 0
-        
-        for i, audio_chunk in tqdm(enumerate(chunks, start=1), total=len(chunks), desc="Processing and transcribing chunks"):
-            try:
-                chunk_filename = os.path.join(sub_folder_name, f"chunk{i}.wav")
-                audio_chunk.export(chunk_filename, format="wav")
-                
-                text = transcribe_audio(chunk_filename)
-                if text:
-                    start_time = current_time
-                    end_time = current_time + len(audio_chunk) / 1000
-                    whole_text.append((start_time, end_time, text.capitalize()))
-                    logging.info(f"Transcribed chunk {i}: {text}")
-                else:
-                    logging.warning(f"No text transcribed for chunk {i}")
-                
-                current_time += len(audio_chunk) / 1000
-                
-                # Add silence duration if it's not the last chunk
-                if i < len(chunks):
-                    silence_duration = silences[i-1][1] - silences[i-1][0]
-                    current_time += silence_duration / 1000
-            except Exception as e:
-                logging.error(f"Error processing chunk {i}: {str(e)}")
-                logging.error(traceback.format_exc())
-        
-        return whole_text
-    except Exception as e:
-        logging.error(f"Error in get_large_audio_transcription_on_silence: {str(e)}")
-        logging.error(traceback.format_exc())
-        return []
-
-def format_timestamp(seconds):
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    minutes, seconds = divmod(int(seconds), 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
-
-def create_srt_file(transcription, output_path):
-    with open(output_path, 'w', encoding='utf-8') as srt_file:
-        for i, (start, end, text) in enumerate(transcription, start=1):
-            start_formatted = format_timestamp(start)
-            end_formatted = format_timestamp(end)
-            srt_file.write(f"{i}\n{start_formatted} --> {end_formatted}\n{text}\n\n")
-
-def process_file(path, output):
-    if is_video_file(path):
-        video = mp.VideoFileClip(path)
-        audio_filename = os.path.splitext(os.path.basename(path))[0] + '.wav'
-        audio_output = os.path.join('audio', audio_filename)
-        video.audio.write_audiofile(audio_output)
-    elif is_audio_file(path):
-        audio_output = path
-    else:
-        logging.warning(f"Unsupported file type: {path}")
-        return
-
-    logging.info(f'Transcribing {path}')
-    transcription = get_large_audio_transcription_on_silence(audio_output)
-    
-    # Create TXT file
-    txt_output = output + '.txt'
-    with open(txt_output, "w") as text_file:
-        for start, end, text in transcription:
-            text_file.write(f"[{format_timestamp(start)}] {text}\n")
-    
-    # Create SRT file
-    srt_output = output + '.srt'
-    create_srt_file(transcription, srt_output)
-    
-    logging.info(f'Completed captions for {path}')
-
-def main(source, log):
-    folder_path = init_folders(source, log)
-    if not os.listdir(folder_path):
-        logging.warning('The job folder is empty!')
-        return
-
-    files = [f for f in os.listdir(folder_path) if is_audio_file(f) or is_video_file(f)]
-    for filename in tqdm(files, desc="Processing files"):
-        path = os.path.join(folder_path, filename)
+        # Process the video and generate caption
         caption_filename = os.path.splitext(filename)[0]
-        output = os.path.join('caption', caption_filename)
-        process_file(path, output)
+        output_path = os.path.join(app.config['CAPTION_FOLDER'], caption_filename)
+        process_file(video_path, output_path)
+        
+        caption_url = f'/download/{caption_filename}.srt'
+        return jsonify({'caption_url': caption_url}), 200
+    return jsonify({'error': 'Invalid file type'}), 400
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Transcribe video and audio files")
-    parser.add_argument("--folder", help="folder of the video", default='video')
-    parser.add_argument("--log", action="store_true", help="display logging information",default=True)
-    args = parser.parse_args()
-    main(args.folder,args.log)
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    return send_file(os.path.join(app.config['CAPTION_FOLDER'], filename), as_attachment=True)
+
+if __name__ == '__main__':
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(CAPTION_FOLDER, exist_ok=True)
+    app.run(debug=True)
