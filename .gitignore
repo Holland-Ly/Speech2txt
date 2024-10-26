@@ -1,8 +1,11 @@
-venv
-audio
-job
-video
-caption
-testing
-audio-chunks
+Python/venv
+Python/audio
+Python/job
+Python/video
+Python/caption
+Python/captions
+Python/captioned_videos
+Python/testing
+Python/audio-chunks
+Python/uploads
 
