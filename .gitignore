@@ -8,3 +8,27 @@ Python/captioned_videos
 Python/testing
 Python/audio-chunks
 Python/uploads
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+webapp/video2txt/node_modules
+webapp/video2txt/.pnp
+webapp/video2txt/.pnp.js
+
+# testing
+webapp/video2txt/coverage
+
+# production
+webapp/video2txt/build
+
+# misc
+webapp/video2txt/.DS_Store
+webapp/video2txt/.env.local
+webapp/video2txt/.env.development.local
+webapp/video2txt/.env.test.local
+webapp/video2txt/.env.production.local
+
+webapp/video2txt/npm-debug.log*
+webapp/video2txt/yarn-debug.log*
+webapp/video2txt/yarn-error.log*
