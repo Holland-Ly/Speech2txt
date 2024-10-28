@@ -2,16 +2,10 @@ import React, { useState, useRef } from "react";
 import "./main.scss";
 
 function Main() {
-  const [file, setFile] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [filesStatus, setFilesStatus] = useState({});
   const [isUploading, setIsUploading] = useState(false);
-  const [fileStatus, setFileStatus] = useState({
-    name: "",
-    progress: 0,
-    status: "", // 'processing', 'completed', 'error'
-    message: "",
-    downloadUrl: null,
-  });
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -26,74 +20,80 @@ function Main() {
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type.startsWith("video/")) {
-      setFile(droppedFile);
-    }
+    const droppedFiles = Array.from(e.dataTransfer.files).filter((file) =>
+      file.type.startsWith("video/")
+    );
+    setFiles((prevFiles) => [...prevFiles, ...droppedFiles]);
   };
 
   const handleFileInput = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.type.startsWith("video/")) {
-      setFile(selectedFile);
-    }
+    const selectedFiles = Array.from(e.target.files).filter((file) =>
+      file.type.startsWith("video/")
+    );
+    setFiles((prevFiles) => [...prevFiles, ...selectedFiles]);
   };
 
   const handleSubmit = async () => {
-    if (!file) return;
-
+    if (files.length === 0) return;
     setIsUploading(true);
-    setFileStatus({
-      name: file.name,
-      progress: 0,
-      status: "processing",
-      message: "Starting upload...",
-      downloadUrl: null,
-    });
 
-    const formData = new FormData();
-    formData.append("video", file);
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append("video", file);
 
-    try {
-      const response = await fetch("http://127.0.0.1:5000/upload", {
-        method: "POST",
-        body: formData,
-        headers: {
-          Accept: "application/json",
-        },
-      });
+      try {
+        const response = await fetch("http://127.0.0.1:5000/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setFilesStatus((prev) => ({
+          ...prev,
+          [file.name]: {
+            name: file.name,
+            progress: 0,
+            status: "processing",
+            message: "Starting processing...",
+            downloadUrl: null,
+            taskId: data.task_id,
+          },
+        }));
+        startProgressMonitoring(data.task_id, file.name);
+      } catch (error) {
+        setFilesStatus((prev) => ({
+          ...prev,
+          [file.name]: {
+            name: file.name,
+            status: "error",
+            message: "Upload failed",
+          },
+        }));
       }
-
-      const data = await response.json();
-      startProgressMonitoring(data.task_id);
-    } catch (error) {
-      console.error("Error:", error);
-      setFileStatus((prev) => ({
-        ...prev,
-        status: "error",
-        message: "Upload failed",
-      }));
-    } finally {
-      setIsUploading(false);
     }
+    setIsUploading(false);
   };
 
-  const startProgressMonitoring = (taskId) => {
+  const startProgressMonitoring = (taskId, fileName) => {
     const eventSource = new EventSource(
       `http://127.0.0.1:5000/progress/${taskId}`
     );
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setFileStatus((prev) => ({
+      setFilesStatus((prev) => ({
         ...prev,
-        progress: data.progress,
-        status: data.status,
-        message: data.message,
-        downloadUrl: data.download_url,
+        [fileName]: {
+          ...prev[fileName],
+          progress: data.progress,
+          status: data.status,
+          message: data.message,
+          downloadUrl: data.download_url,
+        },
       }));
 
       if (data.status === "completed" || data.status === "error") {
@@ -103,20 +103,23 @@ function Main() {
 
     eventSource.onerror = () => {
       eventSource.close();
-      setFileStatus((prev) => ({
+      setFilesStatus((prev) => ({
         ...prev,
-        status: "error",
-        message: "Connection lost",
+        [fileName]: {
+          ...prev[fileName],
+          status: "error",
+          message: "Connection lost",
+        },
       }));
     };
   };
 
-  const handleDownload = async () => {
-    if (!fileStatus.downloadUrl) return;
+  const handleDownload = async (fileName) => {
+    if (!filesStatus[fileName].downloadUrl) return;
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:5000${fileStatus.downloadUrl}`
+        `http://127.0.0.1:5000${filesStatus[fileName].downloadUrl}`
       );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -126,7 +129,7 @@ function Main() {
       const a = document.createElement("a");
       a.style.display = "none";
       a.href = url;
-      a.download = fileStatus.downloadUrl.split("/").pop();
+      a.download = filesStatus[fileName].downloadUrl.split("/").pop();
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -147,8 +150,8 @@ function Main() {
         onClick={() => fileInputRef.current.click()}
       >
         <p>
-          {file
-            ? file.name
+          {files.length > 0
+            ? files.map((file) => file.name).join(", ")
             : "Drag and drop a video file here, or click to select"}
         </p>
         <input
@@ -162,12 +165,12 @@ function Main() {
       <button
         className="submit-button"
         onClick={handleSubmit}
-        disabled={!file || isUploading}
+        disabled={files.length === 0 || isUploading}
       >
         {isUploading ? "Uploading..." : "Submit"}
       </button>
 
-      {fileStatus.name && (
+      {Object.keys(filesStatus).length > 0 && (
         <div className="file-table">
           <table>
             <thead>
@@ -178,30 +181,33 @@ function Main() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>{fileStatus.name}</td>
-                <td>
-                  <div className="progress-container">
-                    <div
-                      className="progress-bar"
-                      style={{ width: `${fileStatus.progress}%` }}
-                    />
-                    <span className="progress-text">
-                      {fileStatus.message} ({fileStatus.progress}%)
-                    </span>
-                  </div>
-                </td>
-                <td>
-                  {fileStatus.downloadUrl && (
-                    <button
-                      onClick={handleDownload}
-                      className="download-button"
-                    >
-                      Download
-                    </button>
-                  )}
-                </td>
-              </tr>
+              {Object.keys(filesStatus).map((fileName) => (
+                <tr key={fileName}>
+                  <td>{filesStatus[fileName].name}</td>
+                  <td>
+                    <div className="progress-container">
+                      <div
+                        className="progress-bar"
+                        style={{ width: `${filesStatus[fileName].progress}%` }}
+                      />
+                      <span className="progress-text">
+                        {filesStatus[fileName].message} (
+                        {filesStatus[fileName].progress}%)
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    {filesStatus[fileName].downloadUrl && (
+                      <button
+                        onClick={() => handleDownload(fileName)}
+                        className="download-button"
+                      >
+                        Download
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

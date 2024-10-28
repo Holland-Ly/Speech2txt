@@ -64,47 +64,33 @@ def get_progress(task_id):
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    try:
-        if 'video' not in request.files:
-            return jsonify({'error': 'No file part'}), 400
-        
-        file = request.files['video']
-        if file.filename == '':
-            return jsonify({'error': 'No selected file'}), 400
-        
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            task_id = str(uuid.uuid4())
-            
-            # Initialize progress status
-            progress_status[task_id] = {
-                'percent': 0,
-                'status': 'processing',
-                'message': 'Starting process...',
-                'download_url': None
-            }
-            
-            video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(video_path)
-            
-            # Start processing in a separate thread
-            thread = Thread(
-                target=process_video_with_progress, 
-                args=(video_path, task_id, progress_status),
-                daemon=True
-            )
-            thread.start()
-            
-            return jsonify({
-                'task_id': task_id,
-                'message': 'Processing started'
-            }), 200
-        
-        return jsonify({'error': 'Invalid file type'}), 400
+    if 'video' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
     
-    except Exception as e:
-        print(f"Error in upload: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    file = request.files['video']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    if file and allowed_file(file.filename):
+        task_id = str(uuid.uuid4())
+        filename = secure_filename(file.filename)
+        video_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(video_path)
+        
+        progress_status[task_id] = {
+            'percent': 0,
+            'status': 'processing',
+            'message': 'Starting processing...'
+        }
+        
+        thread = Thread(target=process_video_with_progress, 
+                       args=(video_path, task_id, progress_status))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'task_id': task_id}), 200
+        
+    return jsonify({'error': 'Invalid file type'}), 400
 
 @app.route('/download/<filename>', methods=['GET'])
 def download_file(filename):
