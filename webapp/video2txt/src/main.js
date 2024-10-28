@@ -23,14 +23,38 @@ function Main() {
     const droppedFiles = Array.from(e.dataTransfer.files).filter((file) =>
       file.type.startsWith("video/")
     );
+
+    // Add files to status immediately
+    const newFilesStatus = {};
+    droppedFiles.forEach((file) => {
+      newFilesStatus[file.name] = {
+        name: file.name,
+        status: "pending", // new status for files not yet uploaded
+        message: "Waiting to upload...",
+        progress: 0,
+      };
+    });
+
     setFiles((prevFiles) => [...prevFiles, ...droppedFiles]);
+    setFilesStatus((prev) => ({ ...prev, ...newFilesStatus }));
   };
 
   const handleFileInput = (e) => {
     const selectedFiles = Array.from(e.target.files).filter((file) =>
       file.type.startsWith("video/")
     );
+
+    const newFilesStatus = {};
+    selectedFiles.forEach((file) => {
+      newFilesStatus[file.name] = {
+        name: file.name,
+        message: "Ready to upload",
+        progress: 0,
+      };
+    });
+
     setFiles((prevFiles) => [...prevFiles, ...selectedFiles]);
+    setFilesStatus((prev) => ({ ...prev, ...newFilesStatus }));
   };
 
   const handleSubmit = async () => {
@@ -139,6 +163,52 @@ function Main() {
     }
   };
 
+  const handleUploadFile = async (file) => {
+    const formData = new FormData();
+    formData.append("video", file);
+
+    try {
+      setFilesStatus((prev) => ({
+        ...prev,
+        [file.name]: {
+          ...prev[file.name],
+          status: "uploading",
+          message: "Uploading...",
+        },
+      }));
+
+      const response = await fetch("http://127.0.0.1:5000/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setFilesStatus((prev) => ({
+        ...prev,
+        [file.name]: {
+          ...prev[file.name],
+          status: "processing",
+          message: "Starting processing...",
+          taskId: data.task_id,
+        },
+      }));
+      startProgressMonitoring(data.task_id, file.name);
+    } catch (error) {
+      setFilesStatus((prev) => ({
+        ...prev,
+        [file.name]: {
+          ...prev[file.name],
+          status: "error",
+          message: "Upload failed",
+        },
+      }));
+    }
+  };
+
   return (
     <div className="container">
       <h1>Video to Text Converter</h1>
@@ -149,16 +219,13 @@ function Main() {
         onDrop={handleDrop}
         onClick={() => fileInputRef.current.click()}
       >
-        <p>
-          {files.length > 0
-            ? files.map((file) => file.name).join(", ")
-            : "Drag and drop a video file here, or click to select"}
-        </p>
+        <p>Drag and drop video files here, or click to select</p>
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileInput}
           accept="video/*"
+          multiple
           style={{ display: "none" }}
         />
       </div>
@@ -175,34 +242,46 @@ function Main() {
           <table>
             <thead>
               <tr>
-                <th width="20%">File Name</th>
-                <th width="70%">Progress</th>
-                <th width="10%">Action</th>
+                <th width="30%">File Name</th>
+                <th width="50%">Progress</th>
+                <th width="20%">Action</th>
               </tr>
             </thead>
             <tbody>
-              {Object.keys(filesStatus).map((fileName) => (
+              {Object.entries(filesStatus).map(([fileName, status]) => (
                 <tr key={fileName}>
-                  <td>{filesStatus[fileName].name}</td>
+                  <td>{fileName}</td>
                   <td>
                     <div className="progress-container">
                       <div
                         className="progress-bar"
-                        style={{ width: `${filesStatus[fileName].progress}%` }}
+                        style={{ width: `${status.progress}%` }}
                       />
-                      <span className="progress-text">
-                        {filesStatus[fileName].message} (
-                        {filesStatus[fileName].progress}%)
-                      </span>
+                      <span className="progress-text">{status.message}</span>
                     </div>
                   </td>
                   <td>
-                    {filesStatus[fileName].downloadUrl && (
+                    {!status.taskId ? (
                       <button
-                        onClick={() => handleDownload(fileName)}
+                        className="upload-button"
+                        onClick={() =>
+                          handleUploadFile(
+                            files.find((f) => f.name === fileName)
+                          )
+                        }
+                      >
+                        Upload
+                      </button>
+                    ) : status.downloadUrl ? (
+                      <button
                         className="download-button"
+                        onClick={() => handleDownload(fileName)}
                       >
                         Download
+                      </button>
+                    ) : (
+                      <button className="upload-button" disabled>
+                        Processing...
                       </button>
                     )}
                   </td>
