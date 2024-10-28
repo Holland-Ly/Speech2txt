@@ -5,7 +5,13 @@ function Main() {
   const [file, setFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [captionUrl, setCaptionUrl] = useState(null);
+  const [fileStatus, setFileStatus] = useState({
+    name: "",
+    progress: 0,
+    status: "", // 'processing', 'completed', 'error'
+    message: "",
+    downloadUrl: null,
+  });
   const fileInputRef = useRef(null);
 
   const handleDragOver = (e) => {
@@ -37,6 +43,14 @@ function Main() {
     if (!file) return;
 
     setIsUploading(true);
+    setFileStatus({
+      name: file.name,
+      progress: 0,
+      status: "processing",
+      message: "Starting upload...",
+      downloadUrl: null,
+    });
+
     const formData = new FormData();
     formData.append("video", file);
 
@@ -54,20 +68,56 @@ function Main() {
       }
 
       const data = await response.json();
-      setCaptionUrl(data.caption_url);
+      startProgressMonitoring(data.task_id);
     } catch (error) {
       console.error("Error:", error);
-      alert("Failed to upload video. Please try again.");
+      setFileStatus((prev) => ({
+        ...prev,
+        status: "error",
+        message: "Upload failed",
+      }));
     } finally {
       setIsUploading(false);
     }
   };
 
+  const startProgressMonitoring = (taskId) => {
+    const eventSource = new EventSource(
+      `http://127.0.0.1:5000/progress/${taskId}`
+    );
+
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setFileStatus((prev) => ({
+        ...prev,
+        progress: data.progress,
+        status: data.status,
+        message: data.message,
+        downloadUrl: data.download_url,
+      }));
+
+      if (data.status === "completed" || data.status === "error") {
+        eventSource.close();
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      setFileStatus((prev) => ({
+        ...prev,
+        status: "error",
+        message: "Connection lost",
+      }));
+    };
+  };
+
   const handleDownload = async () => {
-    if (!captionUrl) return;
+    if (!fileStatus.downloadUrl) return;
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000${captionUrl}`);
+      const response = await fetch(
+        `http://127.0.0.1:5000${fileStatus.downloadUrl}`
+      );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -76,7 +126,7 @@ function Main() {
       const a = document.createElement("a");
       a.style.display = "none";
       a.href = url;
-      a.download = captionUrl.split("/").pop();
+      a.download = fileStatus.downloadUrl.split("/").pop();
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -116,12 +166,42 @@ function Main() {
       >
         {isUploading ? "Uploading..." : "Submit"}
       </button>
-      {captionUrl && (
-        <div className="caption-result">
-          <h2>Caption Generated!</h2>
-          <button onClick={handleDownload} className="download-button">
-            Download Caption File
-          </button>
+
+      {fileStatus.name && (
+        <div className="file-table">
+          <table>
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Progress</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{fileStatus.name}</td>
+                <td>
+                  <div className="progress-container">
+                    <div
+                      className="progress-bar"
+                      style={{ width: `${fileStatus.progress}%` }}
+                    />
+                    <span className="progress-text">{fileStatus.message}</span>
+                  </div>
+                </td>
+                <td>
+                  {fileStatus.downloadUrl && (
+                    <button
+                      onClick={handleDownload}
+                      className="download-button"
+                    >
+                      Download
+                    </button>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -8,7 +8,7 @@ from utils.audio_processing import extract_audio_from_video, split_audio_on_sile
 from utils.transcription import transcribe_audio_chunks
 from utils.output_generation import create_srt_file, create_txt_file
 from utils.file_operations import is_audio_file, is_video_file
-
+import json
 def create_ffmpeg_stream(video_path, caption_file, output_path):
     video_input_stream = ffmpeg.input(video_path)
     subtitle_input_stream = ffmpeg.input(caption_file)
@@ -69,3 +69,64 @@ def process_file(path, output):
         logging.error(f"Error in process_file: {str(e)}")
         logging.error(traceback.format_exc())
         raise
+
+def process_video_with_progress(path, task_id, progress_status):
+    try:
+        # Extract audio
+        progress_status[task_id].update({
+            'percent': 10,
+            'message': 'Extracting audio...'
+        })
+        audio_filename = os.path.splitext(os.path.basename(path))[0] + '.wav'
+        audio_output = os.path.join('audio', audio_filename)
+        extract_audio_from_video(path, audio_output)
+
+        # Load audio
+        progress_status[task_id].update({
+            'percent': 30,
+            'message': 'Loading audio...'
+        })
+        sound = AudioSegment.from_file(audio_output)
+
+        # Split audio
+        progress_status[task_id].update({
+            'percent': 50,
+            'message': 'Splitting audio...'
+        })
+        silence_thresh = sound.dBFS - 14
+        min_silence_len = 500
+        chunks, silences = split_audio_on_silence(sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
+
+        # Transcribe chunks
+        progress_status[task_id].update({
+            'percent': 70,
+            'message': 'Transcribing audio...'
+        })
+        folder_name = "audio-chunks"
+        sub_folder_name = os.path.join(folder_name, os.path.splitext(os.path.basename(path))[0])
+        transcription = transcribe_audio_chunks(sound, chunks,sub_folder_name ,silences)
+
+        # Generate output files
+        progress_status[task_id].update({
+            'percent': 90,
+            'message': 'Generating caption files...'
+        })
+        caption_filename = os.path.splitext(os.path.basename(path))[0]
+        output_path = os.path.join('captions', caption_filename)
+        
+        create_srt_file(transcription, output_path + '.srt')
+        create_txt_file(transcription, output_path + '.txt')
+
+        # Complete
+        progress_status[task_id].update({
+            'percent': 100,
+            'status': 'completed',
+            'message': 'Processing completed',
+            'download_url': f'/download/{caption_filename}.srt'
+        })
+
+    except Exception as e:
+        progress_status[task_id].update({
+            'status': 'error',
+            'message': str(e)
+        })
