@@ -1,83 +1,90 @@
 # Speech2txt
 
-This Python script transcribes video and audio files using speech recognition. It supports various audio and video formats and provides the transcribed text as output.
+A web application that transcribes video files into text using speech recognition. Upload videos through a user-friendly interface and get transcribed captions in SRT format.
 
 ## Features
 
-- Transcribes audio from video files (mp4, avi, mov, mkv, flv, wmv, webm)
-- Transcribes audio files directly (mp3, wav, flac, aac, ogg, wma)
-- Splits audio into chunks based on silence for improved transcription
-- Generates a text file with the transcribed captions
-- Configurable logging for monitoring the transcription process
+- Web-based interface for easy video upload
+- Supports multiple video formats (mp4, avi, mov, mkv, flv, wmv, webm)
+- Real-time progress tracking during transcription
+- Downloads captions in SRT format
+- Docker support for easy deployment
 
-## Requirements
+## Prerequisites
 
-- Python 3.8+
-- moviepy
-- SpeechRecognition
-- pydub
-- ffmpeg (for audio/video file support)
+- Docker and Docker Compose
+- Git
 
-## Installation
+## Quick Start
 
 1. Clone the repository:
 
-git clone https://github.com/yourusername/video-audio-transcription.git
-text
+```bash
+git clone https://github.com/yourusername/speech2txt.git
+cd speech2txt
 
-2. Install the required dependencies:
+```
 
+3. Access the web interface at: http://localhost:3000
+
+## Manual Installation
+
+If you prefer to run without Docker:
+
+1. Set up the Python backend:
+
+```bash
+cd Python
+python -m venv venv
+source venv/bin/activate # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
-text
+```
 
-3. Install ffmpeg:
+2. Set up the React frontend:
 
-- For macOS (using Homebrew):
-  ```
-  brew install ffmpeg
-  ```
-- For Linux (using apt):
-  ```
-  sudo apt install ffmpeg
-  ```
-- For Windows, download the ffmpeg binaries from the official website and add the bin directory to your system's PATH.
+```bash
+cd webapp/video2txt
+npm install
+```
+
+3. Start the application:
+
+````bash
+On macOS/Linux
+./start.sh
+On Windows (run these in separate terminals)
+cd Python && python main.py
+cd webapp/video2txt && npm start```
+````
 
 ## Usage
 
-1. Place the video or audio files you want to transcribe in the `job` folder (or specify a different folder using the `--folder` argument).
+1. Open the web interface (http://localhost:3000)
+2. Drag and drop video files or click to select files
+3. Click "Upload" to start the transcription process
+4. Monitor the progress in real-time
+5. Download the SRT file when processing is complete
 
-2. Run the script:
+## Project Structure
 
-python main.py [--folder FOLDER] [--log]
-text
-
-Arguments:
-
-- `--folder FOLDER`: Specify the folder containing the video/audio files (default: 'job').
-- `--log`: Enable logging for monitoring the transcription process (default: True).
-
-3. The script will process each video/audio file in the specified folder and generate a corresponding text file with the transcribed captions in the `caption` folder.
-
-## Folder Structure
-
-The script creates the following folders:
-
-- `audio`: Stores the extracted audio files from video files.
-- `video`: Stores the video files (if any).
-- `caption`: Stores the generated text files with transcribed captions.
-- `audio-chunks`: Stores the audio chunks created during the transcription process.
+- `/Python` - Backend Flask application
+  - `/utils` - Video processing and transcription logic
+  - `main.py` - Flask server
+- `/webapp/video2txt` - React frontend application
+  - `/src` - React components and logic
+  - `/public` - Static assets
 
 ## Contributing
 
-Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request.As a hobbyist maintainer, I deeply appreciate all contributions to this project. While I cannot guarantee immediate responses or fixes, I will do my best to review and address issues and pull requests as time allows. Thank you for your understanding and support!
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgements
 
-- [MoviePy](https://zulko.github.io/moviepy/) - Python library for video editing.
-- [SpeechRecognition](https://pypi.org/project/SpeechRecognition/) - Library for performing speech recognition with support for several engines and APIs.
-- [Pydub](https://github.com/jiaaro/pydub) - Python library for audio manipulation.
-- The code is written with support of perplexity.ai
+- Built with Flask and React
+- Uses OpenAI Whisper for speech recognition
+- MoviePy for video processing
+- FFmpeg for media handling

@@ -71,6 +71,7 @@ def process_file(path, output):
         raise
 
 def process_video_with_progress(path, task_id, progress_status):
+    temp_files = []  # Keep track of files to cleanup
     try:
         # Extract audio (10%)
         progress_status[task_id].update({
@@ -80,6 +81,8 @@ def process_video_with_progress(path, task_id, progress_status):
         audio_filename = os.path.splitext(os.path.basename(path))[0] + '.wav'
         audio_output = os.path.join('audio', audio_filename)
         extract_audio_from_video(path, audio_output)
+        temp_files.append(audio_output)
+        temp_files.append(path)  # Add original video to cleanup
 
         # Load audio (20%)
         progress_status[task_id].update({
@@ -143,7 +146,34 @@ def process_video_with_progress(path, task_id, progress_status):
             'download_url': f'/download/{caption_filename}.srt'
         })
 
+        # After successful completion, cleanup files
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        
+        # Cleanup audio chunks folder
+        chunk_folder = os.path.join('audio-chunks', os.path.splitext(os.path.basename(path))[0])
+        if os.path.exists(chunk_folder):
+            for chunk_file in os.listdir(chunk_folder):
+                os.remove(os.path.join(chunk_folder, chunk_file))
+            os.rmdir(chunk_folder)
+
+        # Cleanup empty audio folder
+        audio_folder = os.path.dirname(audio_output)
+        if os.path.exists(audio_folder) and not os.listdir(audio_folder):
+            os.rmdir(audio_folder)
+
+        # Cleanup empty uploads folder
+        upload_folder = os.path.dirname(path)
+        if os.path.exists(upload_folder) and not os.listdir(upload_folder):
+            os.rmdir(upload_folder)
+
     except Exception as e:
+        # Cleanup attempt on error
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        
         progress_status[task_id].update({
             'status': 'error',
             'message': f'Error: {str(e)}',

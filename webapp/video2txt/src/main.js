@@ -66,10 +66,13 @@ function Main() {
       formData.append("video", file);
 
       try {
-        const response = await fetch("http://127.0.0.1:5000/upload", {
-          method: "POST",
-          body: formData,
-        });
+        const response = await fetch(
+          `${process.env.REACT_APP_API_URL}/upload`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -104,7 +107,7 @@ function Main() {
 
   const startProgressMonitoring = (taskId, fileName) => {
     const eventSource = new EventSource(
-      `http://127.0.0.1:5000/progress/${taskId}`
+      `${process.env.REACT_APP_API_URL}/progress/${taskId}`
     );
 
     eventSource.onmessage = (event) => {
@@ -143,7 +146,7 @@ function Main() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:5000${filesStatus[fileName].downloadUrl}`
+        `${process.env.REACT_APP_API_URL}${filesStatus[fileName].downloadUrl}`
       );
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -177,7 +180,7 @@ function Main() {
         },
       }));
 
-      const response = await fetch("http://127.0.0.1:5000/upload", {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/upload`, {
         method: "POST",
         body: formData,
       });
@@ -229,13 +232,6 @@ function Main() {
           style={{ display: "none" }}
         />
       </div>
-      <button
-        className="submit-button"
-        onClick={handleSubmit}
-        disabled={files.length === 0 || isUploading}
-      >
-        {isUploading ? "Uploading..." : "Submit"}
-      </button>
 
       {Object.keys(filesStatus).length > 0 && (
         <div className="file-table">

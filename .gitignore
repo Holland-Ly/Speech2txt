@@ -8,8 +8,18 @@ Python/captioned_videos
 Python/testing
 Python/audio-chunks
 Python/uploads
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+env/
+venv/
+ENV/
+*.log
 
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 webapp/video2txt/node_modules
@@ -32,3 +42,13 @@ webapp/video2txt/.env.production.local
 webapp/video2txt/npm-debug.log*
 webapp/video2txt/yarn-debug.log*
 webapp/video2txt/yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
