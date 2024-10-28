@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./Python
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./Python/uploads:/app/uploads
+      - ./Python/captions:/app/captions
+      - ./Python/audio:/app/audio
+      - ./Python/audio-chunks:/app/audio-chunks
+    environment:
+      - FLASK_APP=main.py
+      - FLASK_ENV=development
+
+  frontend:
+    build:
+      context: ./webapp/video2txt
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://localhost:5001
