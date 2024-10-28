@@ -72,7 +72,7 @@ def process_file(path, output):
 
 def process_video_with_progress(path, task_id, progress_status):
     try:
-        # Extract audio
+        # Extract audio (10%)
         progress_status[task_id].update({
             'percent': 10,
             'message': 'Extracting audio...'
@@ -81,36 +81,54 @@ def process_video_with_progress(path, task_id, progress_status):
         audio_output = os.path.join('audio', audio_filename)
         extract_audio_from_video(path, audio_output)
 
-        # Load audio
+        # Load audio (20%)
         progress_status[task_id].update({
-            'percent': 30,
+            'percent': 20,
             'message': 'Loading audio...'
         })
         sound = AudioSegment.from_file(audio_output)
 
-        # Split audio
+        # Split audio (30%)
         progress_status[task_id].update({
-            'percent': 50,
+            'percent': 30,
             'message': 'Splitting audio...'
         })
         silence_thresh = sound.dBFS - 14
         min_silence_len = 500
         chunks, silences = split_audio_on_silence(sound, min_silence_len=min_silence_len, silence_thresh=silence_thresh)
-
-        # Transcribe chunks
-        progress_status[task_id].update({
-            'percent': 70,
-            'message': 'Transcribing audio...'
-        })
+        
+        # Start transcription process (30-90%)
         folder_name = "audio-chunks"
         sub_folder_name = os.path.join(folder_name, os.path.splitext(os.path.basename(path))[0])
-        transcription = transcribe_audio_chunks(sound, chunks,sub_folder_name ,silences)
+        os.makedirs(sub_folder_name, exist_ok=True)
 
-        # Generate output files
+        # Start transcription with progress tracking
+        transcription = []
+        for progress in transcribe_audio_chunks(sound, chunks, sub_folder_name, silences):
+            if progress['type'] == 'progress':
+                current_progress = 30 + (progress['chunk'] / progress['total'] * 60)
+                progress_status[task_id].update({
+                    'percent': int(current_progress),
+                    'message': f'Transcribing chunk {progress["chunk"]} of {progress["total"]}...'
+                })
+            elif progress['type'] == 'text':
+                progress_status[task_id].update({
+                    'message': f'Transcribed chunk {progress["chunk"]}: {progress["text"][:30]}...'
+                })
+            elif progress['type'] == 'complete':
+                transcription = progress['transcription']
+            elif progress['type'] == 'error':
+                progress_status[task_id].update({
+                    'message': f'Error in chunk {progress["chunk"]}: {progress["message"]}'
+                })
+
+        # Update progress based on completion
         progress_status[task_id].update({
             'percent': 90,
             'message': 'Generating caption files...'
         })
+
+        # Generate output files (90-100%)
         caption_filename = os.path.splitext(os.path.basename(path))[0]
         output_path = os.path.join('captions', caption_filename)
         
@@ -128,5 +146,6 @@ def process_video_with_progress(path, task_id, progress_status):
     except Exception as e:
         progress_status[task_id].update({
             'status': 'error',
-            'message': str(e)
+            'message': f'Error: {str(e)}',
+            'percent': 0
         })

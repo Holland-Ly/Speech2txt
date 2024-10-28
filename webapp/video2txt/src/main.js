@@ -172,9 +172,9 @@ function Main() {
           <table>
             <thead>
               <tr>
-                <th>File Name</th>
-                <th>Progress</th>
-                <th>Action</th>
+                <th width="20%">File Name</th>
+                <th width="70%">Progress</th>
+                <th width="10%">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -186,7 +186,9 @@ function Main() {
                       className="progress-bar"
                       style={{ width: `${fileStatus.progress}%` }}
                     />
-                    <span className="progress-text">{fileStatus.message}</span>
+                    <span className="progress-text">
+                      {fileStatus.message} ({fileStatus.progress}%)
+                    </span>
                   </div>
                 </td>
                 <td>
