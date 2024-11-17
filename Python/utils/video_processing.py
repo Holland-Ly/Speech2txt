@@ -143,13 +143,14 @@ def process_video_with_progress(path, task_id, progress_status):
             'percent': 100,
             'status': 'completed',
             'message': 'Processing completed',
-            'download_url': f'/download/{caption_filename}.srt'
+            'download_url': f'/download/{caption_filename}.srt',
+            'download_url_audio': f'/download/audio/{audio_filename}'
         })
 
         # After successful completion, cleanup files
-        for temp_file in temp_files:
+        """for temp_file in temp_files:
             if os.path.exists(temp_file):
-                os.remove(temp_file)
+                os.remove(temp_file)"""
         
         # Cleanup audio chunks folder
         chunk_folder = os.path.join('audio-chunks', os.path.splitext(os.path.basename(path))[0])
@@ -158,10 +159,6 @@ def process_video_with_progress(path, task_id, progress_status):
                 os.remove(os.path.join(chunk_folder, chunk_file))
             os.rmdir(chunk_folder)
 
-        # Cleanup empty audio folder
-        audio_folder = os.path.dirname(audio_output)
-        if os.path.exists(audio_folder) and not os.listdir(audio_folder):
-            os.rmdir(audio_folder)
 
         # Cleanup empty uploads folder
         upload_folder = os.path.dirname(path)

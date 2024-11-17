@@ -6,7 +6,7 @@ services:
       context: ./Python
       dockerfile: Dockerfile
     ports:
-      - "5001:5000"
+      - "5001:5001"
     volumes:
       - ./Python/uploads:/app/uploads
       - ./Python/captions:/app/captions
@@ -21,7 +21,7 @@ services:
       context: ./webapp/video2txt
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
       - backend
     environment:

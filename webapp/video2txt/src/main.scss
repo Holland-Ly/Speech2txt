@@ -1,3 +1,4 @@
+@import "node_modules/bootstrap/scss/bootstrap";
 .container {
   max-width: 800px;
   margin: 0 auto;
@@ -233,4 +234,79 @@ h1 {
     text-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
     z-index: 1;
   }
+}
+
+.split-button-group {
+  display: inline-flex;
+  align-items: stretch;
+
+  .main-action-button {
+    border: none;
+    font-size: 1 rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+
+    &:hover:not(:disabled) {
+      background-color: #0056b3;
+    }
+
+    &:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+  }
+
+  .dropdown-toggle {
+    padding: 6px 8px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 0 4px 4px 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+
+    &::after {
+      display: inline-block;
+      margin-left: 0.255em;
+      vertical-align: 0.255em;
+      content: "";
+      border-top: 0.3em solid;
+      border-right: 0.3em solid transparent;
+      border-bottom: 0;
+      border-left: 0.3em solid transparent;
+    }
+
+    &:hover:not(:disabled) {
+      background-color: #0056b3;
+    }
+
+    &:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.video-preview {
+  background-color: #000000;
+  video {
+    transform: rotate(0.01deg);
+  }
+}
+
+.caption-content textarea {
+  height: 20vh;
 }

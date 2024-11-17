@@ -19,11 +19,12 @@ CORS(app, resources={
 
 UPLOAD_FOLDER = 'uploads'
 CAPTION_FOLDER = 'captions'
+AUDIO_FOLDER = 'audio'
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'webm'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['CAPTION_FOLDER'] = CAPTION_FOLDER
-
+app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
 # Dictionary to store progress status for each task
 progress_status = {}
 
@@ -41,7 +42,8 @@ def get_progress(task_id):
                         'progress': progress.get('percent', 0),
                         'status': progress.get('status', 'processing'),
                         'message': progress.get('message', 'Processing...'),
-                        'download_url': progress.get('download_url', None)
+                        'download_url': progress.get('download_url', None),
+                          'download_url_audio': progress.get('download_url_audio', None)
                     })
                     yield f"data: {data}\n\n"
                     
@@ -108,10 +110,43 @@ def download_file(filename):
         print(f"Error in download: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/download/audio/<filename>', methods=['GET'])
+def download_audio(filename):
+    print(f"Downloading audio: {filename}")
+    try:
+        file_path = os.path.join(app.config['AUDIO_FOLDER'], filename)
+        if os.path.exists(file_path):
+            return send_file(
+                file_path,
+                as_attachment=True,
+                download_name=filename
+            )
+        else:
+            return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        print(f"Error in download: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/update-caption/<file_name>', methods=['POST'])
+def update_caption(file_name):
+    data = request.json
+    content = data.get('content', '')
+
+    # Ensure the file name has the correct .srt extension
+    if not file_name.endswith('.srt'):
+        file_name = f"{os.path.splitext(file_name)[0]}.srt"
+
+    # Save the updated content to the appropriate file
+    caption_path = os.path.join(app.config['CAPTION_FOLDER'], file_name)
+    print(f"Updating caption for {caption_path}: {content}")
+    with open(caption_path, 'w') as f:
+        f.write(content)
+    return jsonify({"message": "Caption updated successfully"}), 200
+
 if __name__ == '__main__':
     # Create necessary directories if they don't exist
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(CAPTION_FOLDER, exist_ok=True)
-    
+    os.makedirs(AUDIO_FOLDER, exist_ok=True)
     # Run the Flask app
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    app.run(host='0.0.0.0', port=5001, debug=True, threaded=True)
