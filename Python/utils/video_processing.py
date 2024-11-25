@@ -9,6 +9,10 @@ from utils.transcription import transcribe_audio_chunks
 from utils.output_generation import create_srt_file, create_txt_file
 from utils.file_operations import is_audio_file, is_video_file
 import json
+from threading import Event
+
+paused_tasks = {}
+
 def create_ffmpeg_stream(video_path, caption_file, output_path):
     video_input_stream = ffmpeg.input(video_path)
     subtitle_input_stream = ffmpeg.input(caption_file)
@@ -70,7 +74,7 @@ def process_file(path, output):
         logging.error(traceback.format_exc())
         raise
 
-def process_video_with_progress(path, task_id, progress_status):
+def process_video_with_progress(path, task_id, progress_status, paused_tasks):
     temp_files = []  # Keep track of files to cleanup
     try:
         # Extract audio (10%)
@@ -108,22 +112,34 @@ def process_video_with_progress(path, task_id, progress_status):
         # Start transcription with progress tracking
         transcription = []
         for progress in transcribe_audio_chunks(sound, chunks, sub_folder_name, silences):
-            if progress['type'] == 'progress':
-                current_progress = 30 + (progress['chunk'] / progress['total'] * 60)
-                progress_status[task_id].update({
-                    'percent': int(current_progress),
-                    'message': f'Transcribing chunk {progress["chunk"]} of {progress["total"]}...'
-                })
-            elif progress['type'] == 'text':
-                progress_status[task_id].update({
-                    'message': f'Transcribed chunk {progress["chunk"]}: {progress["text"][:30]}...'
-                })
-            elif progress['type'] == 'complete':
-                transcription = progress['transcription']
-            elif progress['type'] == 'error':
-                progress_status[task_id].update({
-                    'message': f'Error in chunk {progress["chunk"]}: {progress["message"]}'
-                })
+            # Check if task has been deleted
+            if task_id not in progress_status:
+                print(f"Task {task_id} was deleted, stopping processing")
+                return  # Exit the function if task was deleted
+                
+            # Check if task is paused
+            if task_id in paused_tasks and paused_tasks[task_id]:
+                print(f"Task {task_id} is paused, waiting...")
+                paused_tasks[task_id].wait()
+                
+            # Only update progress if task still exists
+            if task_id in progress_status:
+                if progress['type'] == 'progress':
+                    current_progress = 30 + (progress['chunk'] / progress['total'] * 60)
+                    progress_status[task_id].update({
+                        'percent': int(current_progress),
+                        'message': f'Transcribing chunk {progress["chunk"]} of {progress["total"]}...'
+                    })
+                elif progress['type'] == 'text':
+                    progress_status[task_id].update({
+                        'message': f'Transcribed chunk {progress["chunk"]}: {progress["text"][:30]}...'
+                    })
+                elif progress['type'] == 'complete':
+                    transcription = progress['transcription']
+                elif progress['type'] == 'error':
+                    progress_status[task_id].update({
+                        'message': f'Error in chunk {progress["chunk"]}: {progress["message"]}'
+                    })
 
         # Update progress based on completion
         progress_status[task_id].update({

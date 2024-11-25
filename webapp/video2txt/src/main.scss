@@ -67,15 +67,43 @@ h1 {
 
 .file-list {
   margin-top: 20px;
-  text-align: left;
 }
 
 .file-item {
-  margin-bottom: 10px;
+  margin-bottom: 20px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background-color: #f8f9fa;
 }
 
-.file-item p {
-  margin: 5px 0;
+.file-header {
+  display: inline;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.action-buttons button {
+  background-color: transparent;
+  font-size: 1.5rem;
+  border: none;
+  &:hover {
+    transform: scale(1.2);
+  }
+
+  .bi-trash {
+    color: #dc3545;
+  }
+  .bi-play-fill {
+    &:hover {
+      color: #28a745;
+    }
+  }
+  .bi-pause-fill {
+    &:hover {
+      color: #6c757d;
+    }
+  }
 }
 
 .download-link {
@@ -309,4 +337,12 @@ h1 {
 
 .caption-content textarea {
   height: 20vh;
+}
+
+.file-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+  display: inline-block;
 }

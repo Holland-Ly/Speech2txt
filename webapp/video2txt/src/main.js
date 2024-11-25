@@ -1,11 +1,21 @@
 import React, { useState, useRef, useEffect } from "react";
 import "./main.scss";
-import ReactPlayer from "react-player";
+
 import "../node_modules/bootstrap/dist/css/bootstrap.min.css";
 import "../node_modules/bootstrap/dist/js/bootstrap.bundle.min.js";
 import "../node_modules/bootstrap-icons/font/bootstrap-icons.css";
-import debounce from "./utils/debounce";
+
 import updateCaptionContent from "./utils/updateCaptionContent";
+import FileItem from "./components/FileItem";
+import handleDelete from "./func/handleDelete";
+import handlePauseResume from "./func/handlePauseResume";
+import handleDrop from "./func/handleDrop";
+import handleFileInput from "./func/handleFileInput";
+import logStateChanges from "./func/logStateChanges";
+import handleDownload from "./func/handleDownload";
+import handleUploadFile from "./func/handleUploadFile";
+import fetchCaptionContent from "./utils/fetchCaptionContent";
+
 function Main() {
   const [files, setFiles] = useState([]);
   const [filesStatus, setFilesStatus] = useState({});
@@ -14,11 +24,36 @@ function Main() {
   const fileInputRef = useRef(null);
   const [videoPreviews, setVideoPreviews] = useState({});
   const [captionContents, setCaptionContents] = useState({});
+  const [pausedTasks, setPausedTasks] = useState({});
+  const [stateChangeAction, setStateChangeAction] = useState(null);
+
+  useEffect(() => {
+    /* logStateChanges(stateChangeAction, {
+      files,
+      filesStatus,
+      videoPreviews,
+      captionContents,
+      pausedTasks,
+      setStateChangeAction,
+    });
+  */
+  }, [
+    files,
+    filesStatus,
+    videoPreviews,
+    captionContents,
+    pausedTasks,
+    stateChangeAction,
+  ]);
 
   useEffect(() => {
     Object.entries(filesStatus).forEach(([fileName, status]) => {
       if (status.status === "completed" && status.downloadUrl) {
-        fetchCaptionContent(fileName);
+        fetchCaptionContent(fileName, {
+          filesStatus,
+          setCaptionContents,
+          apiUrl: process.env.REACT_APP_API_URL,
+        });
       }
     });
   }, [filesStatus]);
@@ -32,98 +67,29 @@ function Main() {
     setIsDragging(false);
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const droppedFiles = Array.from(e.dataTransfer.files).filter((file) =>
-      file.type.startsWith("video/")
-    );
-
-    const newFilesStatus = {};
-    const newVideoPreviews = {};
-    droppedFiles.forEach((file) => {
-      newFilesStatus[file.name] = {
-        name: file.name,
-        status: "pending",
-        message: "Waiting to upload...",
-        progress: 0,
-      };
-      newVideoPreviews[file.name] = URL.createObjectURL(file);
+  const handleDropWrapper = (e) => {
+    return handleDrop(e, {
+      setIsDragging,
+      filesStatus,
+      videoPreviews,
+      setFiles,
+      setFilesStatus,
+      setVideoPreviews,
+      setStateChangeAction,
+      handleDelete: handleDeleteWrapper,
     });
-
-    setFiles((prevFiles) => [...prevFiles, ...droppedFiles]);
-    setFilesStatus((prev) => ({ ...prev, ...newFilesStatus }));
-    setVideoPreviews((prev) => ({ ...prev, ...newVideoPreviews }));
   };
 
-  const handleFileInput = (e) => {
-    const selectedFiles = Array.from(e.target.files).filter((file) =>
-      file.type.startsWith("video/")
-    );
-
-    const newFilesStatus = {};
-    const newVideoPreviews = {};
-    selectedFiles.forEach((file) => {
-      newFilesStatus[file.name] = {
-        name: file.name,
-        status: "pending",
-        message: "Waiting to upload...",
-        progress: 0,
-      };
-      newVideoPreviews[file.name] = URL.createObjectURL(file);
+  const handleFileInputWrapper = (e) => {
+    return handleFileInput(e, {
+      filesStatus,
+      videoPreviews,
+      setFiles,
+      setFilesStatus,
+      setVideoPreviews,
+      setStateChangeAction,
+      handleDelete: handleDeleteWrapper,
     });
-
-    setFiles((prevFiles) => [...prevFiles, ...selectedFiles]);
-    setFilesStatus((prev) => ({ ...prev, ...newFilesStatus }));
-    setVideoPreviews((prev) => ({ ...prev, ...newVideoPreviews }));
-  };
-
-  const handleSubmit = async () => {
-    if (files.length === 0) return;
-    setIsUploading(true);
-
-    for (const file of files) {
-      const formData = new FormData();
-      formData.append("video", file);
-
-      try {
-        const response = await fetch(
-          `${process.env.REACT_APP_API_URL}/upload`,
-          {
-            method: "POST",
-            body: formData,
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        setFilesStatus((prev) => ({
-          ...prev,
-          [file.name]: {
-            name: file.name,
-            progress: 0,
-            status: "processing",
-            message: "Starting processing...",
-            downloadUrl: null,
-            taskId: data.task_id,
-          },
-        }));
-        startProgressMonitoring(data.task_id, file.name);
-      } catch (error) {
-        setFilesStatus((prev) => ({
-          ...prev,
-          [file.name]: {
-            name: file.name,
-            status: "error",
-            message: "Upload failed",
-          },
-        }));
-      }
-    }
-    setIsUploading(false);
   };
 
   const startProgressMonitoring = (taskId, fileName) => {
@@ -131,9 +97,12 @@ function Main() {
       `${process.env.REACT_APP_API_URL}/progress/${taskId}`
     );
 
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = async (event) => {
       const data = JSON.parse(event.data);
-      setFilesStatus((prev) => ({
+      console.log("Progress data received:", data);
+
+      // First update the file status
+      await setFilesStatus((prev) => ({
         ...prev,
         [fileName]: {
           ...prev[fileName],
@@ -142,15 +111,37 @@ function Main() {
           message: data.message,
           downloadUrl: data.download_url,
           downloadUrlAudio: data.download_url_audio,
+          taskId: taskId,
         },
       }));
 
-      if (data.status === "completed" || data.status === "error") {
+      // If completed, ensure we have the latest state before fetching captions
+      if (data.status === "completed") {
+        console.log("Processing completed for:", fileName);
+        console.log("Download URLs:", {
+          caption: data.download_url,
+          audio: data.download_url_audio,
+        });
+
+        // Wait for state update to complete
+        setTimeout(() => {
+          if (data.download_url) {
+            fetchCaptionContent(fileName, {
+              filesStatus,
+              setCaptionContents,
+              apiUrl: process.env.REACT_APP_API_URL,
+            });
+          }
+        }, 1000);
+
+        eventSource.close();
+      } else if (data.status === "error") {
         eventSource.close();
       }
     };
 
     eventSource.onerror = () => {
+      console.error("EventSource error for:", fileName);
       eventSource.close();
       setFilesStatus((prev) => ({
         ...prev,
@@ -163,110 +154,46 @@ function Main() {
     };
   };
 
-  const handleDownload = async (fileName, type) => {
-    if (!filesStatus[fileName].downloadUrl) return;
-
-    try {
-      if (type === "caption" || type === "both") {
-        const response = await fetch(
-          `${process.env.REACT_APP_API_URL}${filesStatus[fileName].downloadUrl}`
-        );
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.style.display = "none";
-        a.href = url;
-        a.download = filesStatus[fileName].downloadUrl.split("/").pop();
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
-
-      if (type === "audio" || type === "both") {
-        const audioResponse = await fetch(
-          `${process.env.REACT_APP_API_URL}${filesStatus[fileName].downloadUrlAudio}`
-        );
-        if (!audioResponse.ok) {
-          throw new Error(`HTTP error! status: ${audioResponse.status}`);
-        }
-        const audioBlob = await audioResponse.blob();
-        const audioUrl = window.URL.createObjectURL(audioBlob);
-        const audioLink = document.createElement("a");
-        audioLink.style.display = "none";
-        audioLink.href = audioUrl;
-        audioLink.download = `${fileName}.wav`;
-        document.body.appendChild(audioLink);
-        audioLink.click();
-        window.URL.revokeObjectURL(audioUrl);
-      }
-    } catch (error) {
-      console.error("Download failed:", error);
-      alert("Failed to download the file. Please try again.");
-    }
+  const handleDownloadWrapper = (fileName, type) => {
+    return handleDownload(fileName, type, {
+      filesStatus,
+      apiUrl: process.env.REACT_APP_API_URL,
+    });
   };
 
-  const handleUploadFile = async (file) => {
-    const formData = new FormData();
-    formData.append("video", file);
-
-    try {
-      setFilesStatus((prev) => ({
-        ...prev,
-        [file.name]: {
-          ...prev[file.name],
-          status: "uploading",
-          message: "Uploading...",
-        },
-      }));
-
-      const response = await fetch(`${process.env.REACT_APP_API_URL}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setFilesStatus((prev) => ({
-        ...prev,
-        [file.name]: {
-          ...prev[file.name],
-          status: "processing",
-          message: "Starting processing...",
-          taskId: data.task_id,
-        },
-      }));
-      startProgressMonitoring(data.task_id, file.name);
-    } catch (error) {
-      setFilesStatus((prev) => ({
-        ...prev,
-        [file.name]: {
-          ...prev[file.name],
-          status: "error",
-          message: "Upload failed",
-        },
-      }));
-    }
+  const handleUploadFileWrapper = (fileName) => {
+    return handleUploadFile(fileName, {
+      files,
+      setFilesStatus,
+      setStateChangeAction,
+      apiUrl: process.env.REACT_APP_API_URL,
+      startProgressMonitoring,
+    });
   };
 
-  const fetchCaptionContent = async (fileName) => {
-    try {
-      const response = await fetch(
-        `${process.env.REACT_APP_API_URL}${filesStatus[fileName].downloadUrl}`
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const captionText = await response.text();
-      setCaptionContents((prev) => ({ ...prev, [fileName]: captionText }));
-    } catch (error) {
-      console.error("Failed to fetch caption content:", error);
-    }
+  const handleDeleteWrapper = (fileName) => {
+    return handleDelete(fileName, {
+      filesStatus,
+      videoPreviews,
+      setFilesStatus,
+      setPausedTasks,
+      setFiles,
+      setVideoPreviews,
+      setCaptionContents,
+      setStateChangeAction,
+      apiUrl: process.env.REACT_APP_API_URL,
+    });
+  };
+
+  const handlePauseResumeWrapper = (fileName) => {
+    return handlePauseResume(fileName, {
+      filesStatus,
+      pausedTasks,
+      setPausedTasks,
+      setFilesStatus,
+      setStateChangeAction,
+      apiUrl: process.env.REACT_APP_API_URL,
+    });
   };
 
   return (
@@ -276,14 +203,14 @@ function Main() {
         className={`drop-zone ${isDragging ? "dragging" : ""}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
+        onDrop={handleDropWrapper}
         onClick={() => fileInputRef.current.click()}
       >
         <p>Drag and drop video files here, or click to select</p>
         <input
           type="file"
           ref={fileInputRef}
-          onChange={handleFileInput}
+          onChange={handleFileInputWrapper}
           accept="video/*"
           multiple
           style={{ display: "none" }}
@@ -291,119 +218,22 @@ function Main() {
       </div>
 
       {Object.keys(filesStatus).length > 0 && (
-        <div className="file-table">
-          <table>
-            <thead>
-              <tr>
-                <th width="20%">File Name</th>
-                <th width="55%">Progress</th>
-                <th width="20%">Action</th>
-                <th width="5%"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(filesStatus).map(([fileName, status]) => (
-                <React.Fragment key={fileName}>
-                  <tr>
-                    <td>{fileName}</td>
-                    <td>
-                      <div className="progress-container">
-                        <div
-                          className="progress-bar"
-                          style={{ width: `${status.progress}%` }}
-                        />
-                        <span className="progress-text">{status.message}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="split-button-group">
-                        {status.status === "pending" ? (
-                          <>
-                            <button
-                              className="btn btn-primary"
-                              onClick={() =>
-                                handleUploadFile(
-                                  files.find((f) => f.name === fileName)
-                                )
-                              }
-                              disabled={status.status === "processing"}
-                            >
-                              <i className="bi bi-cloud-arrow-up-fill"></i>
-                            </button>
-                          </>
-                        ) : status.downloadUrl ? (
-                          <div>
-                            <button
-                              className="btn btn-primary me-2"
-                              onClick={() =>
-                                handleDownload(fileName, "caption")
-                              }
-                              disabled={status.status === "processing"}
-                            >
-                              <i className="bi bi-blockquote-left"></i>
-                            </button>
-                            <button
-                              className="btn btn-primary"
-                              onClick={() => handleDownload(fileName, "audio")}
-                              disabled={status.status === "processing"}
-                            >
-                              <i className="bi bi-file-earmark-music"></i>
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button className="btn btn-primary" disabled>
-                              <i className="bi bi-cloud-arrow-up-fill"></i>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                    <td>
-                      <button
-                        className="btn"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target={`#collapse${fileName}`}
-                        aria-expanded="false"
-                        aria-controls={`collapse${fileName}`}
-                      >
-                        <i className="bi bi-caret-down-fill"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr id={`collapse${fileName}`} className="collapse">
-                    <td colSpan="4">
-                      <div className="video-preview">
-                        {" "}
-                        <ReactPlayer
-                          className="video-preview"
-                          url={videoPreviews[fileName]}
-                          controls={true}
-                          width="100%"
-                        />
-                      </div>
-                      {captionContents[fileName] ? (
-                        <div className="caption-content">
-                          <textarea
-                            className="form-control"
-                            aria-label="With textarea"
-                            defaultValue={captionContents[fileName]}
-                            onChange={(e) =>
-                              debounce(
-                                updateCaptionContent(fileName, e.target.value),
-                                5000
-                              )
-                            }
-                          ></textarea>
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+        <div className="file-list">
+          {Object.entries(filesStatus).map(([fileName, status]) => (
+            <FileItem
+              key={fileName}
+              fileName={fileName}
+              status={status}
+              videoPreviews={videoPreviews}
+              captionContents={captionContents}
+              handleUploadFile={handleUploadFileWrapper}
+              handleDownload={handleDownloadWrapper}
+              updateCaptionContent={updateCaptionContent}
+              handlePauseResume={handlePauseResumeWrapper}
+              handleDelete={handleDeleteWrapper}
+              isPaused={!!pausedTasks[fileName]}
+            />
+          ))}
         </div>
       )}
     </div>
